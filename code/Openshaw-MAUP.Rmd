@@ -23,7 +23,7 @@ knitr::opts_chunk$set(echo = TRUE)
 ```
 
 <div class="date">
-  Version 1.0 | First Created Apr 6, 2026 | Updated Apr 13, 2026
+  Version 1.0 | First Created Apr 6, 2026 | Updated Apr 12, 2026
 </div>
 
 ```{r sets up, warning = FALSE, include=FALSE}
@@ -72,11 +72,11 @@ theme2 <- theme_bw() +
 
 This study revisits one of the most influential demonstrations of the Modifiable Areal Unit Problem (MAUP) by Openshaw (1970). By reproducing and extending Openshaw’s first experiment using open-source computational tools, this study aims to provide both a conceptual and empirical understanding of how zoning and scale influence analytical outcomes.
 
-Three key problems are examined. First, the scale problem, which explores how results change as spatial units are aggregated into larger zones. Second, the aggregation problem, which investigates how different configurations of zones at the same scale can yield different results. Both of these are examined under two forms of spatial arrangement: zoning (contiguous regions) and grouping (non-contiguous sets). Third, we consider the re-aggregation problem, which examines how results change when data are re-aggregated into new spatial units that do not align with the original boundaries.
+Two key problems are examined. First, the scale problem, which explores how results change as spatial units are aggregated into larger zones. Second, the aggregation problem, which investigates how different configurations of zones at the same scale can yield different results. Both of these are examined under two forms of spatial arrangement: zoning (contiguous regions) and grouping (non-contiguous sets). 
 
 Ultimately, this project serves as a pedagogical vignette that highlights the importance of spatial units in geographic analysis and encourages a more critical interpretation of spatial statistical results.
 
-**Keywords: Modifiable Areal Unit Problem, zoning, grouping, scale problem, aggregation problem, area-weighted reaggregation**
+**Keywords: Modifiable Areal Unit Problem, zoning, grouping, scale problem, aggregation problem**
 
 # 2. Background
 
@@ -123,7 +123,7 @@ is the within-zone sum of squares.
 Based on this, the loss of variation due to aggregation can be expressed as:
 
 $$
-\Delta S^B = S^T - S^B
+\Delta S^B = \frac{S^T-S^B}{S^T}
 $$
 
 which measures the amount of variation lost when individual units are aggregated into zones.
@@ -134,7 +134,7 @@ Openshaw ultimately concludes that correlation is not an intrinsic property of t
 
 ## 2.2 Reanalysis of Openshaw's First Experiment
 
-In this report, we attempt to reproduce Openshaw (1970)’s first experiment on the Modifiable Areal Unit Problem (MAUP) and extend it further.
+In this report, we attempt to reproduce Openshaw (1970)’s first experiment on the Modifiable Areal Unit Problem (MAUP).
 
 For the data, we obtained population data from the 1970 US decennial census and presidential election results from 1968 at the county level. We were unable to obtain congressional election data at the county level, as available sources report these data only at the district level.
 
@@ -142,7 +142,6 @@ Following Openshaw (1977), we re-implemented the zoning algorithm in R. We first
 
 To investigate the **aggregation problem**, we generate multiple zoning systems with the same number of zones and compute the correlation coefficient for each, using 1,000 simulations (Openshaw used 10,000, but this is computationally expensive).We also examine the distribution of correlation coefficients across different zoning configurations by computing their range, standard deviation, and distributional shape, as well as calculating the loss of variation following the procedures described in the original experiment.
 
-Finally, as an extension, we explore the **re-aggregation problem** by applying area-weighted reaggregation. Specifically, we examine what happens when county-level data are aggregated into spatial units that do not align with original county boundaries.
 
 # 3. Methodology 
 
@@ -400,13 +399,11 @@ grid.arrange(grobs = group_plots, ncol = 2)
 
 ## 3.4 Analysis
 
-With the zoning and grouping systems in place, we can now analyze how the correlation between the percentage of Republican votes and the percentage of the population over age 60 changes under different spatial configurations. Three main analyses are conducted to examine the scale problem, the aggregation problem, and the re-aggregation problem.
+With the zoning and grouping systems in place, we can now analyze how the correlation between the percentage of Republican votes and the percentage of the population over age 60 changes under different spatial configurations. Two main analyses are conducted to examine the scale problem and the aggregation problem.
 
 For the **scale problem**, we apply the zoning algorithm to generate alternative zoning systems with different numbers of zones (e.g., 6, 12, 18, etc.) and compute the correlation coefficient for each generated zoning system. This allows us to examine how the correlation changes as we aggregate counties into larger zones. Both zoning (contiguous) and grouping (non-contiguous) systems are analyzed to compare the effects of spatial arrangement on the scale problem.
 
 For the **aggregation problem**, we generate multiple zoning systems with the same number of zones (e.g., 6 zones) and compute the correlation coefficient for each, using 1,000 simulation. We also examine the distribution of correlation coefficients across different zoning configurations by computing their range, standard deviation, and distributional shape, as well as calculating the loss of variation following the procedures described in the original experiment. Both zoning and grouping systems are analyzed here. 
-
-Finally, as an extension, we explore the **re-aggregation problem** by applying area-weighted reaggregation. Specifically, we examine what happens when county-level data are aggregated into spatial units that do not align with original county boundaries. This is done by reaggregating multiple randomly generated zoning systems into congressional districts using area-weighted interpolation, and then analyzing how the correlation changes under this new spatial configuration.
 
 # 4. Results
 
@@ -530,7 +527,7 @@ M_vals <- c(6, 12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 98)
 
 A helper function is defined to compute the correlation coefficient for a given zoning configuration. This function takes the original data and the zone assignments, aggregates the data to the zone level, and then computes the correlation between the percentage of Republican votes and the percentage of the population over age 60 at the zone level. Another deviation from Openshaw's original approach here is that in the original experiment, variables were each aggregated by summing the country percentages and dividing by the number of counties in each zone, which is not a proper way to aggregate percentages. Openshaw acknowledges this issue and states that this approach was adopted to faciliate computation in the subsequent simulation. In our analysis, we aggregate the raw counts (e.g., total population, total votes, etc.) to the zone level and then compute the percentages at the zone level, which is a more accurate way to aggregate these variables.
 
-```{r scale problem helper function, warning = FALSE, message=FALSE}
+```{r helper function, warning = FALSE, message=FALSE}
 
 compute_zone_correlation <- function(data, zone_ids) {
   zone_summary <- data %>%
@@ -553,7 +550,7 @@ The results show how the correlation coefficient decrease as the number of zones
 
 <span style="color: #6f7f6c; font-weight: bold;">Table 3: Coefficient of Different Areal Arrangements</span>
 
-```{r scale problem analysis, warning = FALSE, message=FALSE}
+```{r scale problem analysis, warning = FALSE, message=FALSE, eval=FALSE}
 zoning_results <- map_dfr(M_vals, function(m) {
   result <- zone1_r(nb, N, m)
   tibble(
@@ -571,6 +568,14 @@ grouping_results <- map_dfr(M_vals, function(m) {
 corr_results <- zoning_results %>%
   select(zones, zoning_correlation = correlation) %>%
   left_join(grouping_results %>% select(zones, grouping_correlation = correlation), by = "zones")
+
+# save cor
+write_csv(corr_results, here("data", "derived", "scale_results.csv"))
+```
+
+
+```{r scale problem results, warning = FALSE, message=FALSE, echo=FALSE}
+corr_results <- read_csv(here("data", "derived", "scale_results.csv"))
 corr_results %>%
   kable(col.names = c(
     "Number of Zones",
@@ -579,6 +584,7 @@ corr_results %>%
   )) %>%
   kable_styling(bootstrap_options = c("striped", "hover", "condensed")) 
 ```
+
 
 Note that because of the randomness in the zoning and grouping algorithms, the correlation values vary across different runs. But it is evident that the correlation coefficient varied substantially across different zoning and grouping arrangements, and generally decreased as the number of zones decreased, which means that generalizations based on aggregated data can be misleading. 
 
@@ -603,19 +609,367 @@ ggplot(corr_results_long, aes(x = zones, y = correlation, color = method)) +
 
 ## 4.3 Aggregation Problem 
 
+For the aggregation problem, we generate multiple zoning systems with the same number of zones (e.g., 6 zones) and compute the correlation coefficient for each, using 1,000 simulations. We also examine the distribution of correlation coefficients across different zoning configurations by computing their range, standard deviation, and distributional shape, as well as calculating the loss of variation following the procedures described in the original experiment. Both zoning and grouping systems are analyzed here. To facilitate the simulation process, a helper function `run_simulations()` is defined to run multiple simulations. 
 
-## 4.4 Re-aggregation Problem 
+```{r simulation setup, warning = FALSE, message=FALSE}
+run_simulations <- function(M_vals, n_runs, runner) {
+  map_dfr(M_vals, function(m) {
+    map_dfr(seq_len(n_runs), function(run_id) {
+      runner(m = m, run_id = run_id)
+    })
+  })
+}
+```
 
+Then, two helper functions `run_one_zoning()` and `run_one_grouping()` are defined to run a single simulation for zoning and grouping arrangements, respectively. These functions take the number of zones, the run ID, the data, and other necessary parameters, and return a tibble containing the method, number of zones, run ID, correlation coefficient, and any faults (for zoning).
+
+```{r zoning and grouping simulation, warning = FALSE, message=FALSE}
+run_one_zoning <- function(m, run_id, nb, data, N) {
+  result <- zone1_r(nb, N, m)
+  
+  tibble(
+    method = "Zoning",
+    M = m,
+    run = run_id,
+    zones = result$n_zones,
+    ifault = result$ifault,
+    correlation = compute_zone_correlation(data, result$ipart))
+}
+
+run_one_grouping <- function(m, run_id, data, N) {
+  group_ids <- random_grouping(N, m)
+  
+  tibble(
+    method = "Grouping",
+    M = m,
+    run = run_id,
+    zones = length(unique(group_ids)),
+    ifault = 0,
+    correlation = compute_zone_correlation(data, group_ids))
+}
+```
+
+Next, we run the simulations for both zoning and grouping arrangements across the specified values of M and the number of runs. The results are stored in two separate data frames, which are then combined.
+
+```{r aggregation problem simulation, warning = FALSE, message=FALSE, eval=FALSE}
+n_runs <- 1000
+
+all_zoning_corrs <- run_simulations(
+  M_vals = M_vals,
+  n_runs = n_runs,
+  runner = function(m, run_id) {
+    run_one_zoning(
+      m = m,
+      run_id = run_id,
+      nb = nb,
+      data = iowa_data,
+      N = N)}
+)
+
+all_grouping_corrs <- run_simulations(
+  M_vals = M_vals,
+  n_runs = n_runs,
+  runner = function(m, run_id) {
+    run_one_grouping(
+      m = m,
+      run_id = run_id,
+      data = iowa_data,
+      N = N)}
+)
+
+saveRDS(all_zoning_corrs, here("data", "derived", "all_zoning_corrs.rds"))
+saveRDS(all_grouping_corrs, here("data", "derived", "all_grouping_corrs.rds"))
+```
+
+At the aggregation level, the results show that there is a wide range of correlation coefficients across different zoning and grouping configurations, even when the number of zones / groups is held constant. For both for six zones and six groups the limits show that it is possible to produce the widest range of correlations, spanning from negative to positive values. As the number of zones / groups increases, the range of possible correlations narrows, especially for zoning arrangements where contiguity constraints are involved. This demonstrates the aggregation problem of the MAUP, where different spatial configurations can lead to different analytical results.
+
+We can conclude that for all scales there is a relatively wide range of correlations which would certainly involve alternative substantive interpretations. 
+
+<span style="color: #6f7f6c; font-weight: bold;">Table 4: Maximum and Minimum Values of the Correlation Coefficient</span>
+
+```{r aggregation problem analysis, warning = FALSE, message=FALSE, echo=FALSE}
+
+all_zoning_corrs <- readRDS(here("data", "derived", "all_zoning_corrs.rds"))
+all_grouping_corrs <- readRDS(here("data", "derived", "all_grouping_corrs.rds"))
+all_corrs <- bind_rows(all_zoning_corrs, all_grouping_corrs)
+
+corr_summary <- all_corrs %>%
+  group_by(method, M) %>%
+  summarise(
+    n_runs = n(),
+    min_corr = min(correlation, na.rm = TRUE),
+    max_corr = max(correlation, na.rm = TRUE),
+    range_corr = max_corr - min_corr,
+    mean_corr = mean(correlation, na.rm = TRUE),
+    sd_corr = sd(correlation, na.rm = TRUE),
+    min_ifault = min(ifault, na.rm = TRUE),
+    max_ifault = max(ifault, na.rm = TRUE),
+    .groups = "drop")
+
+corr_table <- corr_summary %>%
+  select(method, M, min_corr, max_corr) %>%
+  tidyr::pivot_wider(
+    names_from = method,
+    values_from = c(min_corr, max_corr)) %>%
+  dplyr::select(M, min_corr_Zoning, max_corr_Zoning, min_corr_Grouping, max_corr_Grouping)
+
+corr_table %>%
+  rename(
+    "Number of zones or groups" = M,
+    "minimum r" = min_corr_Zoning,
+    "maximum r" = max_corr_Zoning,
+    "minimum r " = min_corr_Grouping,
+    "maximum r " = max_corr_Grouping) %>%
+  kable(format = "html", digits = 3, align = c("c", "c", "c", "c", "c")) %>%
+  add_header_above(c(" " = 1, "Zoning" = 2, "Grouping" = 2)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = TRUE)
+```
+
+<span style="color: #6f7f6c; font-weight: bold;">Table 5: Mean and Standard Deviation Values of the Correlation Coefficient</span>
+
+```{r aggregation problem analysis2, warning = FALSE, message=FALSE, echo=FALSE}
+
+corr_table_mean_sd <- corr_summary %>%
+  select(method, M, mean_corr, sd_corr) %>%
+  tidyr::pivot_wider(
+    names_from = method,
+    values_from = c(mean_corr, sd_corr)) %>%
+  dplyr::select(M, mean_corr_Zoning, sd_corr_Zoning, mean_corr_Grouping, sd_corr_Grouping)
+
+corr_table_mean_sd %>%
+  rename(
+    "Number of zones or groups" = M,
+    "mean r" = mean_corr_Zoning,
+    "sd r" = sd_corr_Zoning,
+    "mean r " = mean_corr_Grouping,
+    "sd r " = sd_corr_Grouping) %>%
+  kable(format = "html", digits = 3, align = c("c", "c", "c", "c", "c")) %>%
+  add_header_above(c(" " = 1, "Zoning" = 2, "Grouping" = 2)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), full_width = TRUE)
+```
+
+This is the same figure as in Openshaw's original experiment, but with more values of M. The correlation between Republican vote and population over age 60 is consistently positive, but its magnitude varies substantially depending on the aggregation scheme. At coarse scales, different aggregations can produce correlations ranging from moderate to very strong, while at finer scales the correlation stabilizes and becomes nearly invariant.
+
+<span style="color: #6f7f6c; font-weight: bold;">Figure 6: Frequencies of correlation coefficients at different scales.</span>
+
+```{r aggregation problem plot, fig.width=10, message = FALSE, warning = FALSE, dpi=300}
+all_corrs %>%
+  mutate(M_num = M) %>%
+  ggplot(aes(x = correlation, group = M_num, color = M_num)) +
+  geom_density(linewidth = 0.7, adjust = 1.2, show.legend = FALSE) +
+  scale_color_gradient(low = "#C1E3CD", high =  "#006d2c") +
+  facet_wrap(~method, ncol = 2) +
+  coord_cartesian(xlim = c(-1, 1)) +
+  theme1 +
+  labs(
+    title = "Frequencies of Correlation Coefficients at Different Scales",
+    x = "Correlation coefficient",
+    y = "Frequency"
+  )
+```
+
+An alternative way to visualize the distribution of correlation coefficients across different scales is through boxplots. The results show that at coarser scales (fewer zones), there is a wider distribution of correlation coefficients, while at finer scales (more zones), the distribution narrows and becomes more consistent. 
+
+<span style="color: #6f7f6c; font-weight: bold;">Figure 7: Distribution of Correlations by Scale.</span>
+
+```{r aggregation problem boxplot, fig.width=10, message = FALSE, warning = FALSE, dpi=300}
+ggplot(all_corrs, aes(x = factor(M), y = correlation, fill = method)) +
+  geom_boxplot(outlier.size = 0.5, alpha = 0.6, color = "darkgrey") +
+  scale_fill_manual(values = c("Zoning" = "#6EA6C3", "Grouping" = "#99CFAB")) +
+  theme1 +
+  labs(
+    title = "Distribution of Correlations by Scale",
+    x = "Number of Zones",
+    y = "Correlation"
+  )
+```
+
+One thing that Openshaw did in the original experiment was to compute the loss of variation for each zoning and grouping configuration, which is a measure of how much of the original variation in the data is lost due to aggregation. This is calculated by comparing the total sum of squares (S_total) with the between-zone sum of squares (S_between) and computing the proportion of variation lost. To reproduce that, we define a helper function `compute_loss_variation()` that takes the original values and the zone assignments, and computes the loss of variation for both the percentage of population over age 60 and the percentage of Republican votes. This allows us to analyze how much information is lost due to aggregation and how it relates to the correlation coefficients.
+
+```{r compute loss variation, warning = FALSE, message=FALSE}
+compute_loss_variation <- function(values, zone_ids) {
+  
+  df <- tibble(
+    value = values,
+    zone = factor(zone_ids))
+  
+  grand_mean <- mean(df$value, na.rm = TRUE)
+  
+  # total sum of squares
+  S_total <- sum((df$value - grand_mean)^2, na.rm = TRUE)
+  
+  # between-zone sum of squares
+  zone_stats <- df %>%
+    group_by(zone) %>%
+    summarise(
+      n = n(),
+      zone_mean = mean(value, na.rm = TRUE),
+      .groups = "drop")
+  
+  S_between <- sum(zone_stats$n * (zone_stats$zone_mean - grand_mean)^2, na.rm = TRUE)
+  # loss of variation
+  delta_Sb <- (S_total - S_between) / S_total
+  
+  return(delta_Sb)
+}
+```
+
+Same as above, we need to recalulate the loss of variation for each zoning and grouping configuration across all simulations. 
+
+```{r zoning and grouping loss, warning = FALSE, message=FALSE}
+zoning_loss <- function(m, run_id, nb, data, N) {
+  result <- zone1_r(nb, N, m)
+  zone_ids <- result$ipart
+  corr_val <- compute_zone_correlation(data, zone_ids)
+  loss_x <- compute_loss_variation(data$pop60_pct, zone_ids)
+  loss_y <- compute_loss_variation(data$pct_rep, zone_ids)
+  loss_d <- loss_x - loss_y
+  tibble(
+    method = "Zoning",
+    M = m,
+    run = run_id,
+    zones = result$n_zones,
+    correlation = corr_val,
+    loss_x = loss_x,
+    loss_y = loss_y,
+    loss_d = loss_d)
+}
+
+grouping_loss <- function(m, run_id, data, N) {
+  zone_ids <- random_grouping(N, m)
+  corr_val <- compute_zone_correlation(data, zone_ids)
+  loss_x <- compute_loss_variation(data$pop60_pct, zone_ids)
+  loss_y <- compute_loss_variation(data$pct_rep, zone_ids)
+  loss_d <- loss_x - loss_y
+  tibble(
+    method = "Grouping",
+    M = m,
+    run = run_id,
+    zones = length(unique(zone_ids)),
+    correlation = corr_val,
+    loss_x = loss_x,
+    loss_y = loss_y,
+    loss_d = loss_d)
+}
+```
+
+
+```{r run loss simulations, warning = FALSE, message=FALSE, eval=FALSE}
+all_zoning_loss <- run_simulations(
+  M_vals = M_vals,
+  n_runs = n_runs,
+  runner = function(m, run_id) {
+    zoning_loss(
+      m = m,
+      run_id = run_id,
+      nb = nb,
+      data = iowa_data,
+      N = N)}
+)
+all_grouping_loss <- run_simulations(
+  M_vals = M_vals,
+  n_runs = n_runs,
+  runner = function(m, run_id) {
+    grouping_loss(
+      m = m,
+      run_id = run_id,
+      data = iowa_data,
+      N = N)}
+)
+saveRDS(all_zoning_loss, here("data", "derived", "all_zoning_loss.rds"))
+saveRDS(all_grouping_loss, here("data", "derived", "all_grouping_loss.rds"))
+```
+
+
+The results show no clear relationship between the magnitude of variation loss and the resulting correlation values. Even when the loss of variation is similar, a wide range of correlations can be produced, particularly at coarser scales. This implies that aggregation-induced changes in correlation cannot be explained solely by the amount of variation lost. Instead, the specific configuration of spatial units plays a critical role. Furthermore, grouping systems exhibit greater variability than zoning systems, indicating that contiguity constraints reduce the range of possible outcomes.
+
+<span style="color: #6f7f6c; font-weight: bold;">Figure 8: Graph plots of one-thousand correlation coefficients against loss of between sums of squares for the independent variable.</span>
+
+```{r plot loss variation, fig.width=10, message=FALSE, warning=FALSE, dpi=300}
+all_zoning_loss <- readRDS(here("data", "derived", "all_zoning_loss.rds"))
+all_grouping_loss <- readRDS(here("data", "derived", "all_grouping_loss.rds"))
+
+all_loss <- bind_rows(all_zoning_loss, all_grouping_loss)
+all_loss %>% 
+  filter(M %in% c(6, 12, 24)) %>% 
+  ggplot(aes(x = loss_x, y = correlation)) +
+  geom_point(size = 0.7, alpha = 0.4, color = "#006d2c") +
+  facet_grid(method ~ M) +
+  theme1 +
+  labs(
+    title = "Correlation Coefficients against Loss of Variation",
+    x = "Loss of between sums of squares",
+    y = "Correlation coefficient"
+  )
+  
+```
+
+Consistent with Openshaw’s findings, there is also no clear relationship between correlation coefficients and differential loss of variation. Even when the difference in variation loss between variables is similar, a wide range of correlation values can result. 
+
+<span style="color: #6f7f6c; font-weight: bold;">Figure 9: Graph plots of one-thousand correlation coefficients against differential loss of between sums of squares.</span>
+
+```{r plot differential loss variation, fig.width=10, message=FALSE, warning=FALSE, dpi=300}
+all_loss %>%
+  filter(M %in% c(6, 12, 24)) %>%
+  mutate(loss_d = loss_x - loss_y) %>% 
+  ggplot(aes(x = loss_d, y = correlation)) +
+  geom_point(size = 0.7, alpha = 0.4, color = "#99CFAB") +
+  facet_grid(method ~ M) +
+  theme1 +
+  labs(
+    title = "Correlation Coefficients against Differential Loss of Variation",
+    x = "Differential loss of variation (ΔSᴰ)",
+    y = "Correlation coefficient"
+  )
+```
+
+## 4.4 A Practical Consideration
+
+In practice, researchers often need to work with predefined spatial units, such as administrative boundaries, and in this case, congressional district, rather than randomly generated zones or groups. To examine how the correlation between the percentage of Republican votes and the percentage of the population over age 60 changes at the district level, we can overlay the original county-level data with the district boundaries, aggregate the data to the district level, and compute the correlation coefficient at that level. This can provide a practical example of how the MAUP can affect real-world analyses based on predefined spatial units. 
+
+```{r district analysis, warning = FALSE, message=FALSE, results='hide'}
+# load district data
+districts <- st_read(here("data", "raw", "districts.geojson"))
+districts <- st_transform(districts, st_crs(iowa_data)) %>% 
+  st_make_valid() %>%
+  dplyr::select(district_id = DISTRICT, geometry)
+```
+We may see that the correlation coefficient is 0.819, much higher than the correlation at the county level, which is 0.22. Since population data is generally collected at the county level, when we aggregate to the district level, it is inevitable that we need aggregation when doing this kind of analysis. It is therefore necessary that we are aware of the potential impact of the MAUP on our analysis and interpret the results with caution, especially when comparing results across different spatial units or scales.
+
+```{r district analysis2, warning = FALSE, message=FALSE}
+iowa_district <- iowa_data %>%
+  st_join(districts, join = st_intersects) %>%
+  group_by(district_id) %>%
+  summarise(
+    totalpop = sum(totalpop, na.rm = TRUE),
+    totalvote = sum(totalvote, na.rm = TRUE),
+    repvote = sum(repvote, na.rm = TRUE),
+    pop60 = sum(pop60, na.rm = TRUE),
+    .groups = "drop") %>%
+  mutate(
+    pct_rep = 100 * repvote / totalvote,
+    pop60_pct = 100 * pop60 / totalpop)
+cor <- cor(iowa_district$pct_rep, iowa_district$pop60_pct, use = "complete.obs")
+cat("Correlation between pct_rep and pop60_pct at district level:", round(cor, 3))
+```
 
 # 5. Summary
 
 
+As a quick summary, while we are unable to reproduce Openshaw’s exact numerical results, the overall patterns closely match those reported in his experiments. We can summarize these experiments on the Iowa data in the following general statements, many of which are consistent with Openshaw’s original findings.
+
+**First**, the correlation coefficient generally decreases as the number of zones increases. In addition, larger zones tend to produce more variable correlation estimates, indicating greater instability at coarser scales.
+
+**Second**, there are clear and systematic differences between zoning and grouping systems. These differences appear to arise from the interaction between the contiguity constraint in zoning systems and the underlying spatial autocorrelation present in the data.
+
+**Finally**, there is no systematic relationship between the loss of variation (as measured by the sums-of-squares terms) and the resulting correlation coefficients. Even when the amount of variation lost is similar, the resulting correlations can vary substantially.
+
+Taken together, these results reinforce the central insight of the MAUP: statistical relationships derived from spatial data are inherently sensitive to how spatial units are defined, and this sensitivity cannot be fully explained by simple measures such as scale or loss of variation alone.
 
 
+### Declaration of Generative AI and AI-Assisted Technologies
 
-
-
-
+During the preparation of this work, we used Claude code to assist with recreating and debugging the zoning algorithm. After using it, we critically reviewed and edited the code and content as needed and take full responsibility for the content in this report.
 
 
 
