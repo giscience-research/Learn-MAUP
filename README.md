@@ -1,2 +1,3 @@
 # Learn-MAUP
-Vignettes for learning Modifiable Areal Unit Problem (MAUP) 
+
+This repository holds learning resources for the Modified Areal Unit Problem (MAUP).
