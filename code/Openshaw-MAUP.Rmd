@@ -1,0 +1,624 @@
+---
+title: "Vignette for Learning Openshaw (1970)'s First Experiment on the Modifiable Areal Unit Problem"
+author: "Peter Kedron, Emily Zhou"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    css: styles.css
+    code_folding: hide
+    highlight: haddock
+    theme: lumen
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+output_dir: "../results"
+urlcolor: blue  
+editor_options:
+  markdown:
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+<div class="date">
+  Version 1.0 | First Created Apr 6, 2026 | Updated Apr 13, 2026
+</div>
+
+```{r sets up, warning = FALSE, include=FALSE}
+# global options 
+options(scipen=999)
+options(tigris_class = "sf")
+options(digits = 3)
+
+# list of required packages
+packages <- c( "tidyverse", "ggplot2", "sf", "knitr","kableExtra", "stringr", "spdep", "here", "purrr", "gridExtra", "dplyr")
+
+# install and load required packages
+package.check <- lapply(
+  packages,
+  FUN = function(x) {
+    if (!require(x, character.only = TRUE)) {
+      install.packages(x, dependencies = TRUE, quietly=TRUE)
+      library(x, character.only = TRUE)
+    }
+  }
+)
+
+theme1 <- theme(plot.subtitle = element_text(size = 12,face = "italic"),
+                legend.position = "none",
+                plot.title = element_text(size = 14, face = "bold"), 
+                axis.text.x=element_text(size=8),
+                axis.text.y=element_text(size=8), 
+                axis.title=element_blank(), 
+                panel.background = element_blank(),
+                panel.border = element_rect(colour = "grey", fill=NA, linewidth =0.8))
+palette1 <- c("#6EA6C3", "#99CFAB", "#FEE59C","#DC6D85", "#FFD190", "#F1B6AC", "#F7B9C8", "#C1DDF4","#C1E3CD", "#ECDCA8" ) 
+green_palette <- c("#f7fcf5",  "#C1E3CD",  "#99CFAB",  "#41ab5d",  "#006d2c")
+
+theme2 <- theme_bw() +
+  theme(plot.subtitle = element_text(size = 12, face = "italic"),
+        plot.title = element_text(size = 14, face = "bold"),
+        axis.text.x = element_text(size = 8),
+        axis.text.y = element_text(size = 8),
+        axis.title = element_blank(),
+        panel.background = element_blank(),
+        panel.border = element_rect(colour = "grey", fill = NA, linewidth = 0.8))
+
+```
+
+# 1. Introduction
+
+This study revisits one of the most influential demonstrations of the Modifiable Areal Unit Problem (MAUP) by Openshaw (1970). By reproducing and extending Openshaw’s first experiment using open-source computational tools, this study aims to provide both a conceptual and empirical understanding of how zoning and scale influence analytical outcomes.
+
+Three key problems are examined. First, the scale problem, which explores how results change as spatial units are aggregated into larger zones. Second, the aggregation problem, which investigates how different configurations of zones at the same scale can yield different results. Both of these are examined under two forms of spatial arrangement: zoning (contiguous regions) and grouping (non-contiguous sets). Third, we consider the re-aggregation problem, which examines how results change when data are re-aggregated into new spatial units that do not align with the original boundaries.
+
+Ultimately, this project serves as a pedagogical vignette that highlights the importance of spatial units in geographic analysis and encourages a more critical interpretation of spatial statistical results.
+
+**Keywords: Modifiable Areal Unit Problem, zoning, grouping, scale problem, aggregation problem, area-weighted reaggregation**
+
+# 2. Background
+
+The choice of areal units for spatial analysis has been a fundamental issue in geography and spatial statistics since the mid-20th century. Since the area over which data are collected is continuous, it follows that there are numerous alternative ways in which it can be partitioned to form areal units for reporting data. In theory, there is an infinite number of ways in which a study area can be divided. These units themselves may also be combined to form larger units at new scales in a large number of alternative ways. This is the Modifiable Areal Unit Problem (MAUP), identified by Yule and Kendall (1950), who emphasize the necessity of not losing sight of the fact that analytical results depend on the choice of spatial units.
+
+The MAUP is, in reality, composed of two separate but interrelated problems. The first is the **scale problem**, defined as the variation in results that arises when the same areal data are aggregated into increasingly larger spatial units. For instance, analyzing the same census data at scales ranging from enumeration districts, wards, and local authorities up to standard regions will almost certainly yield different results and possibly different interpretations. Although scale differences are the most obvious manifestation of the MAUP, there is also the problem of alternative combinations of base units at equal or similar scales. Any variation in results due to different configurations of units when the number of units (n) is held constant is referred to as the **aggregation problem**.
+
+In addition, we can distinguish between two forms of areal arrangement. We use the term zoning system for contiguous arrangements and grouping system for noncontiguous cases. Alternatively, a zoning system may be considered a special case of a grouping system that incorporates a contiguity constraint in its formation.
+
+## 2.1 Openshaw's First Experiment 
+
+Building on this foundation, in the 1970s Openshaw conducted a series of three experiments to demonstrate the impact of the MAUP. In the first experiment, Openshaw examines how statistical relationships change purely as a result of how spatial units are defined. Using data from the 99 counties of Iowa, he selects two variables: the percentage of votes for the Republican presidential candidate in 1968 and the percentage of the population over age 65 from the 1970 census. At the county level, these variables have a baseline Pearson correlation of 0.3466 . This baseline serves as a reference point for all subsequent comparisons. The key idea of the experiment is that the underlying data remain fixed, while only the spatial aggregation scheme changes, allowing him to isolate the effects of zoning and scale on statistical results.
+
+The experimental design proceeds by aggregating the 99 counties into larger spatial units using multiple alternative zoning systems. These include politically defined districts (e.g., Republican- and Democrat-proposed congressional districts), administratively defined districts, and functionally or geographically defined regions such as urban–rural classifications. Each aggregation groups the counties into a smaller number of zones (commonly six in the initial comparisons), after which the same two variables are recomputed at the aggregated level and a new correlation coefficient is calculated. By comparing these correlations across different zoning systems, Openshaw demonstrates that the same underlying data can yield substantially different statistical relationships depending solely on how boundaries are drawn. In general, as the size of zones increases, the correlation values can shift significantly.
+
+Beyond comparing a small set of predefined aggregations, Openshaw extends the analysis using simulation. He generates a large number (on the order of thousands) of alternative zoning and grouping systems, including both contiguous zoning systems and non-contiguous grouping systems. For each simulated aggregation, he recalculates the correlation coefficient, producing a distribution of possible correlation values rather than a single estimate. This allows him to examine the range (maximum and minimum), spread (standard deviation), and shape of the distribution of correlations at different levels of aggregation. Openshaw finds that as the number of zones decreases (i.e., as spatial scale becomes coarser), the range of possible correlations narrows, although substantial variability remains.
+
+In addition to analyzing correlation coefficients, Openshaw introduces a variance decomposition framework to understand how aggregation alters statistical relationships. He expresses total variation as the sum of between-zone and within-zone components and defines a measure of the loss of variation caused by aggregation. 
+
+$$
+S^T = S^B + S^W
+$$
+
+where
+
+$$
+S^T = \sum_j \sum_i (x_{ij} - \bar{x})^2
+$$
+
+is the total sum of squares,
+
+$$
+S^B = \sum_j n_j (\bar{x}_j - \bar{x})^2
+$$
+
+is the between-zone sum of squares, and
+
+$$
+S^W = \sum_j \sum_i (x_{ij} - \bar{x}_j)^2
+$$
+
+is the within-zone sum of squares.
+
+Based on this, the loss of variation due to aggregation can be expressed as:
+
+$$
+\Delta S^B = S^T - S^B
+$$
+
+which measures the amount of variation lost when individual units are aggregated into zones.
+
+Through relating correlation values to this loss of variation, he shows that aggregation not only changes correlation numerically but does so in ways tied to how variance is redistributed across spatial scales.
+
+Openshaw ultimately concludes that correlation is not an intrinsic property of the data but is highly sensitive to how spatial units are defined. 
+
+## 2.2 Reanalysis of Openshaw's First Experiment
+
+In this report, we attempt to reproduce Openshaw (1970)’s first experiment on the Modifiable Areal Unit Problem (MAUP) and extend it further.
+
+For the data, we obtained population data from the 1970 US decennial census and presidential election results from 1968 at the county level. We were unable to obtain congressional election data at the county level, as available sources report these data only at the district level.
+
+Following Openshaw (1977), we re-implemented the zoning algorithm in R. We first conduct exploratory analysis of the variables and the zoning algorithm, including computing the correlation coefficient at the county level. We then follow the original experiment by applying the zoning algorithm to generate alternative zoning systems with different numbers of zones and compute the correlation coefficient for each generated zoning system. This allows us to examine the **scale problem**.
+
+To investigate the **aggregation problem**, we generate multiple zoning systems with the same number of zones and compute the correlation coefficient for each, using 1,000 simulations (Openshaw used 10,000, but this is computationally expensive).We also examine the distribution of correlation coefficients across different zoning configurations by computing their range, standard deviation, and distributional shape, as well as calculating the loss of variation following the procedures described in the original experiment.
+
+Finally, as an extension, we explore the **re-aggregation problem** by applying area-weighted reaggregation. Specifically, we examine what happens when county-level data are aggregated into spatial units that do not align with original county boundaries.
+
+# 3. Methodology 
+
+## 3.1 Data Source and Variables
+
+First, we load the data for the 1968 presidential election results and the 1970 census population data, as well as the spatial data for Iowa counties. 
+
+```{r load data, warning = FALSE, message=FALSE, results='hide'}
+
+vote1968 <- read.csv(here("data", "raw", "1968vote.csv"))
+census1970 <- read.csv(here("data", "raw", "1970census.csv"))
+iowa <- st_read(here("data", "raw", "iowa_county.geojson"))
+
+```
+
+## 3.2 Data Preprocessing
+
+Second, we preprocess the data by calculating the percentage of Republican votes in 1968 and the percentage of the population over age 60 in 1970. Iowa county data is also cleaned and transformed to a common coordinate reference system for spatial analysis.
+
+```{r preprocess data, warning = FALSE, message=FALSE}
+vote1968 <- vote1968 %>% 
+  mutate(pct_rep = 100 * (repvote / totalvote))
+
+census1970 <- census1970 %>% 
+  mutate(Geo_NAME = str_remove(Geo_NAME, " County")) %>% 
+  rename(pop65 = SE_T007_005, totalpop = SE_T007_001, pop6064 = X60_64, County = Geo_NAME) %>%
+  dplyr:: select(County, pop65, pop6064, totalpop) %>%
+  mutate(pop60 = pop6064 + pop65, 
+         pop60_pct = pop60 / totalpop * 100)
+
+iowa <- iowa %>% 
+  rename(County = NAME) %>%
+  st_transform(crs = 6464)
+```
+
+Both the census and vote data contain a "County" column, but they may have different formatting (e.g., extra spaces, "County" suffix, capitalization). To ensure a successful join, we define a function to clean the county names in both datasets.
+
+```{r clean county names, warning = FALSE, message=FALSE}
+clean_county <- function(x) {
+  x %>%
+    str_trim() %>%                 
+    str_remove(" County$") %>%     
+    str_replace_all("['’]", "") %>%
+    str_squish() %>%              
+    str_to_title()                
+}
+
+census1970 <- census1970 %>%
+  mutate(County = clean_county(County))
+
+vote1968 <- vote1968 %>%
+  mutate(County = clean_county(County))
+```
+
+Now we can join the datasets together on the "County" column and select the relevant variables for analysis.
+
+```{r join data, warning = FALSE, message=FALSE}
+iowa_data <- iowa %>%
+  left_join(census1970, by = "County") %>%
+  left_join(vote1968, by = "County") %>% 
+  dplyr::select(County, GEOID, COUNTYNS, pop60, totalpop, pop60_pct, totalvote, repvote, pct_rep, geometry)
+```
+
+
+## 3.3 Zoning Aggregation Algorithm
+
+Next, we reconstruct the zoning algorithm used by Openshaw to aggregate the 99 counties into different zoning systems.
+
+The details of the algorithm are described in Openshaw (1977), specifically in **Algorithm 3: A Procedure to Generate Pseudo-Random Aggregations of N Zones into M Zones**, where $M<N$. To summarize briefly, the purpose of this algorithm is to generate pseudo-random aggregations of
+$N$ zones into $M$ zones, where $M$ is less than $N$, such that each of the original $N$ zones is allocated to one of the $M$ zones, and such that all the member zones of each $M$ zone are spatially contiguous. Successive calls of the subroutine can be used to build up a random sample of alternative zoning systems from the population of all possible zoning systems with $M$ zones.
+
+The algorithm assumes that the study region is initially divided into $N$ zones, (in our case, counties), and that a contiguity matrix is available to describe the adjacency relationships among them. The first step is to randomly select $M$ zones to serve as “core” zones, which act as the seeds for aggregation.
+
+Subsequently, one of these core zones is selected at random. A list is then constructed of all unallocated zones that are adjacent to this core zone. From this list, one zone is randomly selected and assigned to the chosen core zone. This process is repeated by randomly selecting a core zone and assigning adjacent unallocated zones until either all original zones are allocated or no remaining unallocated zones are contiguous to any of the existing aggregated zones.
+
+In the latter case, some zones may remain unassigned due to issues such as isolated spatial configurations or inconsistencies in the contiguity matrix. This can be addressed by rerunning the algorithm with a different set of initial core zones or by modifying the contiguity structure.
+
+To translate this algorithm into R, a function `zone1_r()` is defined below that takes the neighbor list, the number of original zones, the desired number of aggregated zones and returns a list containing the zone assignments for each unit (county). 
+
+<span style="color: #6f7f6c; font-weight: bold;">Table 1: Algorithm Parameters</span>
+
+| **Parameter** | **Description**   | **Notes**   |
+|----------------|---------------------------|---------------------|
+| `nb`           | Neighbor list representing spatial adjacency between zones| Generated using spdep::poly2nb() |
+| `N`            | Number of original zones                                  | Length of the dataset                  |
+| `M`            | Desired number of aggregated zones                        | Must satisfy M < N                     |
+| `fixed_zones`  | Optional vector of pre-assigned zones                     | Defaults to empty                      |
+| `ipart`        | Vector storing zone assignments for each unit             | Initialized as all zeros (unassigned)  |
+| `active_cores` | Set of core zones that can still grow                     | Updated during the algorithm           |
+| `max_iter`     | Maximum number of iterations allowed                      | Prevents infinite loops                |
+| `ifault`       | Number of unallocated zones after completion              | Diagnostic output                      |
+
+<span style="color: #6f7f6c; font-weight: bold;">Table 2: Algorithm Steps</span>
+
+| **Step**    | **Description** |
+|-----------|------------------------------------------|
+| Initialization    | Create an assignment vector (`ipart`) of length N, initialized to 0         |
+| Core Selection    | Randomly select M zones as core zones and assign unique labels              |
+| Active Core Setup | Define the set of active cores that can grow                        |
+| Core Selection (Loop) | Randomly select one active core                       |
+| Neighbor Identification | Identify unallocated neighboring zones of the selected core         |
+| Zone Assignment   | Randomly assign one neighboring zone to the selected core         |
+| Core Deactivation  | Remove core if no unallocated neighbors remain      |
+| Iteration     | Repeat until all zones are assigned or no cores can expand        |
+| Convergence Check    | Stop if all zones are allocated or max iterations reached   |
+| Fault Handling   | Assign leftover unallocated zones new labels       |
+| Output     | Return zone assignments, number of faults (`ifault`), and total zones   |
+
+```{r zoning algorithm, warning = FALSE, message=FALSE}
+
+zone1_r <- function(nb, N, M, fixed_zones = integer(0)) {
+  # nb: a neighbor list from spdep::poly2nb()
+  # N: number of original zones
+  # M: desired number of output zones
+
+  stopifnot(M < N)
+  
+  # --- Initialize ---
+  # Creates a vector of 99 zeros, one slot per county. 
+  # A 0 means not yet assigned to any zone.
+  ipart <- integer(N)  
+  
+  # handle fixed zones (optional)
+  n_fixed <- length(fixed_zones)
+  if (n_fixed > 0) {
+    for (i in seq_along(fixed_zones)) {
+      ipart[fixed_zones[i]] <- i
+    }
+  }
+  n_cores_needed <- M - n_fixed
+  
+  # --- Step 1: Randomly select M core zones ---
+  available <- which(ipart == 0)
+  core_indices <- sample(available, n_cores_needed)
+  
+  for (i in seq_along(core_indices)) {
+    ipart[core_indices[i]] <- n_fixed + i
+  }
+  
+  # track active zones
+  active_cores <- (n_fixed + 1):M 
+  
+  # --- Step 2: Random accretion loop ---
+  max_iter <- N * M * 10  # safety limit
+  iter <- 0
+  
+  # stop until safety limit or no active cores with unallocated neighbors
+  while (length(active_cores) > 0 && iter < max_iter) {
+    iter <- iter + 1
+    
+    # pick a random active core
+    core_label <- sample(active_cores, 1)
+    
+    # find all zones belonging to this core
+    core_members <- which(ipart == core_label)
+    
+    # find unallocated neighbors of any core member
+    unalloc_neighbors <- c()
+    for (z in core_members) {
+      neighbors <- nb[[z]]
+      if (!(length(neighbors) == 1 && neighbors == 0)) {  # 0 means no neighbors in spdep
+        unalloc <- neighbors[ipart[neighbors] == 0]
+        unalloc_neighbors <- union(unalloc_neighbors, unalloc)
+      }
+    }
+    
+    if (length(unalloc_neighbors) == 0) {
+      # this core can't grow, deactivate it
+      active_cores <- setdiff(active_cores, core_label)
+    } else {
+      # randomly absorb one neighbor
+      chosen <- ifelse(
+        length(unalloc_neighbors) == 1,
+        unalloc_neighbors,
+        sample(unalloc_neighbors, 1)
+      )
+      ipart[chosen] <- core_label
+    }
+  }
+
+  # --- Check for unallocated zones (islands) ---
+  unallocated <- which(ipart == 0)
+  ifault <- length(unallocated)
+  
+  if (ifault > 0) {
+    warning(paste(ifault, "zones could not be allocated (contiguity islands)"))
+    # Assign them extra zone labels
+    for (i in seq_along(unallocated)) {
+      ipart[unallocated[i]] <- M + i
+    }
+  }
+  list(
+    ipart    = ipart,
+    ifault   = ifault,
+    n_zones  = length(unique(ipart))
+  )
+}
+```
+
+Below is a demonstration of the zoning algorithm, showing how it generates different contiguous zoning systems for Iowa counties with varying numbers of zones.
+
+<span style="color: #6f7f6c; font-weight: bold;">Figure 1: Contiguous Random Zones</span>
+
+```{r zone demo, fig.height=8, fig.width=10, message=FALSE, warning=FALSE, dpi=300}
+nb <- poly2nb(iowa, queen = FALSE)
+N  <- nrow(iowa)
+
+zone_sizes <- c(4, 6, 8, 10)
+zone_plots <- lapply(zone_sizes, function(M) {
+  result <- zone1_r(nb, N, M)
+  
+  vis_zones <- iowa %>%
+    mutate(zone = factor(result$ipart))
+  
+  ggplot(vis_zones) +
+    geom_sf(aes(fill = zone), color = "white", linewidth = 0.2) +
+    theme1 +
+    scale_fill_manual(values = palette1) +
+    labs(title = paste("Randomly Generated", M, "Zones")) 
+})
+
+grid.arrange(grobs = zone_plots, ncol = 2)
+```
+
+Openshaw also generates non-contiguous grouping systems by randomly assigning each original zone to one of the M groups without any spatial constraints. Although he did not provide a specific algorithm for this, it is straightforward to implement through random sampling. The key is to ensure that each group is represented at least once, which can be achieved by first assigning one zone to each group and then randomly assigning the remaining zones.
+
+```{r grouping function, warning = FALSE, message=FALSE}
+random_grouping <- function(N, M) {
+  # guarantee each group appears at least once
+  base <- sample(M)
+  rest <- sample(M, N - M, replace = TRUE)
+  sample(c(base, rest))
+}
+```
+
+Below is a demonstration of the random grouping algorithm, showing how it generates different non-contiguous grouping systems for Iowa counties with varying numbers of groups.
+
+<span style="color: #6f7f6c; font-weight: bold;">Figure 2: Non-Contiguous Random Zones</span>
+
+```{r group demo, fig.height=8, fig.width=10, message=FALSE, warning=FALSE, dpi=300}
+# demo of random grouping
+group_sizes <- c(4, 6, 8, 10)
+group_plots <- lapply(group_sizes, function(M) {
+  group_labels <- random_grouping(N, M)
+  vis_groups <- iowa %>%
+    mutate(group = factor(group_labels))
+  ggplot(vis_groups) +
+    geom_sf(aes(fill = group), color = "white", linewidth = 0.2) +
+    theme1 +
+    scale_fill_manual(values = palette1) +
+    labs(title = paste("Randomly Generated", M, "Groups"))
+})
+grid.arrange(grobs = group_plots, ncol = 2)
+```
+
+## 3.4 Analysis
+
+With the zoning and grouping systems in place, we can now analyze how the correlation between the percentage of Republican votes and the percentage of the population over age 60 changes under different spatial configurations. Three main analyses are conducted to examine the scale problem, the aggregation problem, and the re-aggregation problem.
+
+For the **scale problem**, we apply the zoning algorithm to generate alternative zoning systems with different numbers of zones (e.g., 6, 12, 18, etc.) and compute the correlation coefficient for each generated zoning system. This allows us to examine how the correlation changes as we aggregate counties into larger zones. Both zoning (contiguous) and grouping (non-contiguous) systems are analyzed to compare the effects of spatial arrangement on the scale problem.
+
+For the **aggregation problem**, we generate multiple zoning systems with the same number of zones (e.g., 6 zones) and compute the correlation coefficient for each, using 1,000 simulation. We also examine the distribution of correlation coefficients across different zoning configurations by computing their range, standard deviation, and distributional shape, as well as calculating the loss of variation following the procedures described in the original experiment. Both zoning and grouping systems are analyzed here. 
+
+Finally, as an extension, we explore the **re-aggregation problem** by applying area-weighted reaggregation. Specifically, we examine what happens when county-level data are aggregated into spatial units that do not align with original county boundaries. This is done by reaggregating multiple randomly generated zoning systems into congressional districts using area-weighted interpolation, and then analyzing how the correlation changes under this new spatial configuration.
+
+# 4. Results
+
+## 4.1 Exploratory Data Analysis
+
+Some preliminary exploratory analysis is conducted to understand the distribution of the key variables and their spatial patterns across Iowa counties. This includes mapping the percentage of the population over age 60 and the percentage of Republican votes, as well as examining their standardized distributions and correlation at the county level. While in Openshaw's original experiment, the correlation between these two variables at the county level was **0.3466**, we find a different value of **0.22** in our analysis, which may be due to differences in data sources.
+
+<span style="color: #6f7f6c; font-weight: bold;">Figure 3: Exploratory Data Analysis</span>
+
+```{r eda1, fig.height=10, fig.width=12, message=FALSE, warning=FALSE, dpi=300}
+
+# map elderly population
+age_map <- iowa_data %>% 
+  ggplot() +
+  geom_sf(aes(fill = pop60_pct), color = "white", linewidth = 0.2) +
+  scale_fill_gradientn(colors = green_palette) + 
+  theme1 + 
+  labs(title = "Pct of Population Over Age 60", fill = "Percentage") +
+  theme(
+    legend.position = "bottom",
+    axis.title = element_text(size = 9))
+
+# map voting patterns
+vote_map <- iowa_data %>%
+  ggplot() +
+  geom_sf(aes(fill = pct_rep), color = "white", linewidth = 0.2) +
+  scale_fill_gradientn(colors = green_palette) + 
+  theme1 + 
+  labs(title = "Pct of Republican Votes", fill = "Percentage") +
+  theme(
+    legend.position = "bottom",
+    axis.title = element_text(size = 9))
+
+density_plot <- iowa_data %>%
+  st_drop_geometry() %>%
+  mutate(pop60_std = scale(pop60_pct), rep_std = scale(pct_rep)) %>%
+  tidyr::pivot_longer(
+    cols = c(pop60_std, rep_std),
+    names_to = "variable",
+    values_to = "value"
+  ) %>%
+  ggplot(aes(x = value, fill = variable)) +
+  geom_density(alpha = 0.6, color = NA) +
+  scale_fill_manual(values = c("pop60_std" = "#6EA6C3","rep_std"= "#99CFAB")) +
+  theme2 + 
+  theme(legend.position = "none") + 
+  labs(title = "Standardized Distributions of Variables",
+       x = "Standardized Value",
+       y = "Density") +
+  annotate("text", x = 2.8, y = 0.12,
+           label = "Population Over 60",
+           fontface = "bold", 
+           color = "#6EA6C3", size = 4) +
+  annotate("text", x = 1.5, y = 0.42,
+           label = "Republican Vote %",
+           fontface = "bold", 
+           color = "#99CFAB", size = 4)
+
+# correlation plot
+r_val <- cor(iowa_data$pop60_pct, iowa_data$pct_rep, use = "complete.obs")
+cor_plot <- iowa_data %>%
+  st_drop_geometry() %>%
+  ggplot(aes(x = pop60_pct, y = pct_rep)) +
+  geom_point(color = "#6EA6C3", size = 2) +
+  geom_smooth(method = "lm", color = "#99CFAB", se = FALSE) +
+  annotate("text", x = Inf, y = Inf, label = paste0("r = ", round(r_val, 3)), hjust = 1.1, vjust = 1.5, size = 6, color = "#6f7f6c") +
+  theme2 + 
+  labs(title = "Correlation between Pop Over 60 and Rep Vote %",
+       x = "Percentage of Population Over Age 60",
+       y = "Percentage of Republican Votes")
+
+grid.arrange(age_map, vote_map, density_plot, cor_plot, ncol = 2)
+```
+
+Another important aspect of exploratory analysis is to examine the spatial autocorrelation of the key variables, which can influence the results of zoning and grouping. We conduct Moran's I test for both the percentage of Republican votes and the percentage of the population over age 60 to assess the degree of spatial clustering in these variables across Iowa counties. Both variables show significant positive spatial autocorrelation, meaning similar values tend to cluster together in space. 
+
+<span style="color: #6f7f6c; font-weight: bold;">Figure 4: Moran's I Test</span>
+
+```{r moran test, fig.height=6, fig.width=10, message=FALSE, warning=FALSE, dpi=300}
+nb <- poly2nb(iowa_data, queen = FALSE)
+lw <- nb2listw(nb, style = "W", zero.policy = TRUE)
+
+# simulation (permutation test)
+moran_rep <- moran.mc(iowa_data$pct_rep, lw, nsim = 999, zero.policy = TRUE)
+moran_age <- moran.mc(iowa_data$pop60_pct, lw, nsim = 999, zero.policy = TRUE)
+
+plot_moran_mc <- function(moran_obj, title_text, fill_color) {
+  sim_vals <- moran_obj$res[1:999]
+  obs_val  <- moran_obj$statistic
+  ggplot(data.frame(sim = sim_vals), aes(x = sim)) +
+    geom_histogram(binwidth = 0.01, fill = fill_color, alpha = 0.8) +
+    geom_vline(xintercept = obs_val, color = "#DC6D85", linewidth = 1.2) +
+    theme2 +
+    labs(
+      title = title_text,
+      subtitle = "Observed Moran's I in red",
+      x = "Moran's I",
+      y = "Count") +
+    theme(plot.title = element_text(face = "bold"), plot.subtitle = element_text(face = "italic"))}
+
+plot_rep <- plot_moran_mc(moran_rep, "Moran's I Distribution: Republican Vote %", "#6EA6C3")
+plot_age <- plot_moran_mc(moran_age, "Moran's I Distribution: Population Over 60", "#99CFAB")
+
+grid.arrange(plot_rep, plot_age, ncol = 2)
+```
+
+## 4.2 Scale Problem
+
+For the scale problem, we apply the zoning algorithm to generate alternative zoning systems with different numbers of zones and compute the correlation coefficient for each generated zoning system. Unlike Openshaw's experiment, here we tested all values of M from 6 to 98 (the original experiment only tested a few values such as 6, 12, 18, etc.) to provide a more comprehensive analysis of how the correlation changes as we aggregate counties into larger zones. 
+
+```{r scale problem setup, warning = FALSE, message=FALSE}
+# neighbor list
+nb <- poly2nb(iowa_data, queen = FALSE)
+
+# number of original zones
+N <- nrow(iowa_data)
+
+# different target numbers of zones
+M_vals <- c(6, 12, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 78, 98)
+```
+
+A helper function is defined to compute the correlation coefficient for a given zoning configuration. This function takes the original data and the zone assignments, aggregates the data to the zone level, and then computes the correlation between the percentage of Republican votes and the percentage of the population over age 60 at the zone level. Another deviation from Openshaw's original approach here is that in the original experiment, variables were each aggregated by summing the country percentages and dividing by the number of counties in each zone, which is not a proper way to aggregate percentages. Openshaw acknowledges this issue and states that this approach was adopted to faciliate computation in the subsequent simulation. In our analysis, we aggregate the raw counts (e.g., total population, total votes, etc.) to the zone level and then compute the percentages at the zone level, which is a more accurate way to aggregate these variables.
+
+```{r scale problem helper function, warning = FALSE, message=FALSE}
+
+compute_zone_correlation <- function(data, zone_ids) {
+  zone_summary <- data %>%
+    mutate(zone = factor(zone_ids)) %>%
+    st_drop_geometry() %>%
+    group_by(zone) %>%
+    summarise(
+      total_pop   = sum(totalpop, na.rm = TRUE),
+      total_vote  = sum(totalvote, na.rm = TRUE),
+      rep_count   = sum(repvote, na.rm = TRUE),
+      pop60_count = sum(pop60, na.rm = TRUE),
+      .groups = "drop") %>%
+    mutate(rep_pct   = 100 * rep_count / total_vote,
+           pop60_pct = 100 * pop60_count / total_pop)
+  cor(zone_summary$rep_pct, zone_summary$pop60_pct, use = "complete.obs")
+}
+```
+
+The results show how the correlation coefficient decrease as the number of zones decreases for both zoning and grouping arrangements, demonstrating the scale problem of the MAUP. The results also allow us to compare how zoning (contiguous) and grouping (non-contiguous) arrangements affect the correlation at different scales. This matches the general finding in Openshaw's original experiment. 
+
+<span style="color: #6f7f6c; font-weight: bold;">Table 3: Coefficient of Different Areal Arrangements</span>
+
+```{r scale problem analysis, warning = FALSE, message=FALSE}
+zoning_results <- map_dfr(M_vals, function(m) {
+  result <- zone1_r(nb, N, m)
+  tibble(
+    method = "Zoning",
+    zones = result$n_zones,
+    correlation = compute_zone_correlation(iowa_data, result$ipart))
+})
+grouping_results <- map_dfr(M_vals, function(m) {
+  group_ids <- random_grouping(N, m)
+  tibble(
+    method = "Grouping",
+    zones = length(unique(group_ids)),
+    correlation = compute_zone_correlation(iowa_data, group_ids))
+})
+corr_results <- zoning_results %>%
+  select(zones, zoning_correlation = correlation) %>%
+  left_join(grouping_results %>% select(zones, grouping_correlation = correlation), by = "zones")
+corr_results %>%
+  kable(col.names = c(
+    "Number of Zones",
+    "Zoning (r)",
+    "Grouping (r)"
+  )) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed")) 
+```
+
+Note that because of the randomness in the zoning and grouping algorithms, the correlation values vary across different runs. But it is evident that the correlation coefficient varied substantially across different zoning and grouping arrangements, and generally decreased as the number of zones decreased, which means that generalizations based on aggregated data can be misleading. 
+
+<span style="color: #6f7f6c; font-weight: bold;">Figure 5: Coefficient of Different Areal Arrangements</span>
+
+```{r scale problem plot, fig.width=10, message = FALSE, warning = FALSE, dpi=300}
+# plot changes
+corr_results_long <- corr_results %>%
+  pivot_longer(cols = c(zoning_correlation, grouping_correlation), names_to = "method", values_to = "correlation") %>%
+  mutate(method = recode(method, zoning_correlation = "Zoning", grouping_correlation = "Grouping"))
+ggplot(corr_results_long, aes(x = zones, y = correlation, color = method)) +
+  geom_line(size = 1.2) +
+  geom_point(size = 2) +
+  scale_color_manual(values = c("Zoning" = "#6EA6C3", "Grouping" = "#99CFAB")) +
+  theme2 +
+  labs(title = "Correlation Coefficient by Number of Zones",
+       x = "Number of Zones",
+       y = "Correlation Coefficient (r)",
+       color = "Method") +
+  theme(plot.title = element_text(face = "bold"))
+```
+
+## 4.3 Aggregation Problem 
+
+
+## 4.4 Re-aggregation Problem 
+
+
+# 5. Summary
+
+
+
+
+
+
+
+
+
+
+
+
+
+
