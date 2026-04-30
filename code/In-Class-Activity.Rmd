@@ -1,0 +1,367 @@
+---
+title: "In-Class Activity"
+author: "Your Name"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    css: styles.css
+    code_folding: hide
+    highlight: haddock
+    theme: lumen
+    toc: yes
+    toc_depth: 4
+    toc_float: yes
+urlcolor: blue  
+editor_options:
+  markdown:
+    wrap: sentence
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Set Up
+
+Please make sure you run all the code chunks in the set up. This will load the necessary packages and data for the rest of the activity.
+
+```{r sets up, warning = FALSE, include=FALSE}
+
+# global options 
+options(scipen=999)
+options(tigris_class = "sf")
+options(digits = 3)
+
+# list of required packages
+packages <- c( "tidyverse", "ggplot2", "sf", "knitr","kableExtra", "stringr", "spdep", "here", "purrr", "gridExtra", "dplyr")
+
+# install and load required packages
+package.check <- lapply(
+  packages,
+  FUN = function(x) {
+    if (!require(x, character.only = TRUE)) {
+      install.packages(x, dependencies = TRUE, quietly=TRUE)
+      library(x, character.only = TRUE)
+    }
+  }
+)
+
+theme <- theme(plot.subtitle = element_text(size = 12,face = "italic"),
+                legend.position = "none",
+                plot.title = element_text(size = 14, face = "bold"), 
+                axis.text.x=element_text(size=8),
+                axis.text.y=element_text(size=8), 
+                axis.title=element_blank(), 
+                panel.background = element_blank(),
+                panel.border = element_rect(colour = "grey", fill=NA, linewidth =0.8))
+palette <- c("#6EA6C3", "#99CFAB", "#FEE59C","#DC6D85", "#FFD190", "#F1B6AC", "#F7B9C8", "#C1DDF4","#C1E3CD", "#ECDCA8" ) 
+green_palette <- c("#f7fcf5",  "#C1E3CD",  "#99CFAB",  "#41ab5d",  "#006d2c")
+
+```
+
+Load in the data. The voting data is from the 1968 presidential election, and the census data is from the 1970 census. The geojson contains the geometries for Iowa's counties.
+
+```{r load data, warning = FALSE, message=FALSE, results='hide'}
+
+vote1968 <- read.csv(here("data", "raw", "1968vote.csv"))
+census1970 <- read.csv(here("data", "raw", "1970census.csv"))
+iowa <- st_read(here("data", "raw", "iowa_county.geojson"))
+
+```
+
+Process the data to create the variables we need for the activity. We need to calculate the percentage of votes for the Republican candidate in 1968, and the percentage of the population that is 60 years or older in 1970. We also need to clean up the county names to make sure they match across datasets.
+
+```{r preprocess data, warning = FALSE, message=FALSE}
+vote1968 <- vote1968 %>% 
+  mutate(pct_rep = 100 * (repvote / totalvote))
+
+census1970 <- census1970 %>% 
+  mutate(Geo_NAME = str_remove(Geo_NAME, " County")) %>% 
+  rename(pop65 = SE_T007_005, totalpop = SE_T007_001, pop6064 = X60_64, County = Geo_NAME) %>%
+  dplyr:: select(County, pop65, pop6064, totalpop) %>%
+  mutate(pop60 = pop6064 + pop65, 
+         pop60_pct = pop60 / totalpop * 100)
+
+iowa <- iowa %>% 
+  rename(County = NAME) %>%
+  st_transform(crs = 6464)
+```
+
+
+```{r clean county names, warning = FALSE, message=FALSE}
+clean_county <- function(x) {
+  x %>%
+    str_trim() %>%                 
+    str_remove(" County$") %>%     
+    str_replace_all("['’]", "") %>%
+    str_squish() %>%              
+    str_to_title()                
+}
+
+census1970 <- census1970 %>%
+  mutate(County = clean_county(County))
+
+vote1968 <- vote1968 %>%
+  mutate(County = clean_county(County))
+```
+
+After cleaning the county names, we can join the datasets together. We will use a left join to keep all the counties in the Iowa dataset, and add the census and voting data to it.
+
+```{r join data, warning = FALSE, message=FALSE}
+iowa_data <- iowa %>%
+  left_join(census1970, by = "County") %>%
+  left_join(vote1968, by = "County") %>% 
+  dplyr::select(County, GEOID, COUNTYNS, pop60, totalpop, pop60_pct, totalvote, repvote, pct_rep, geometry)
+```
+
+Let's take a look at the baseline correlation between the percentage of votes for the Republican candidate and the percentage of the population that is 60 years or older in Iowa counties. This will give us a reference point to compare with the correlations we get from the zoning and grouping algorithms.
+
+```{r baseline correlation, warning = FALSE, message=FALSE}
+baseline_corr <- cor(iowa_data$pct_rep, iowa_data$pop60_pct, use = "complete.obs")
+cat("Baseline correlation between % Republican vote and % population 60+ in Iowa counties:", round(baseline_corr, 3))
+
+```
+
+# Part 0 - The Zoning Algorithm 
+
+Below is the zoning algorithm used in Openshaw's 1977 paper. This algorithm is a random accretion method that starts with randomly selected core zones and then randomly absorbs neighboring zones until the desired number of zones is reached. Please run the code chunk below. 
+
+```{r zoning algorithm, warning = FALSE, message=FALSE}
+
+zone1_r <- function(nb, N, M, fixed_zones = integer(0)) {
+  # nb: a neighbor list from spdep::poly2nb()
+  # N: number of original zones
+  # M: desired number of output zones
+
+  stopifnot(M < N)
+  
+  # --- Initialize ---
+  # Creates a vector of zeros.
+  # A 0 means not yet assigned to any zone.
+  ipart <- integer(N)  
+  
+  n_fixed <- length(fixed_zones)
+  if (n_fixed > 0) {
+    for (i in seq_along(fixed_zones)) {
+      ipart[fixed_zones[i]] <- i
+    }
+  }
+  n_cores_needed <- M - n_fixed
+  
+  # --- Step 1: Randomly select M core zones ---
+  available <- which(ipart == 0)
+  core_indices <- sample(available, n_cores_needed)
+  
+  for (i in seq_along(core_indices)) {
+    ipart[core_indices[i]] <- n_fixed + i
+  }
+  active_cores <- (n_fixed + 1):M 
+  
+  # --- Step 2: Random accretion loop ---
+  max_iter <- N * M * 10  # safety limit
+  iter <- 0
+  
+  # stop until safety limit or no active cores with unallocated neighbors
+  while (length(active_cores) > 0 && iter < max_iter) {
+    iter <- iter + 1
+    
+    # pick a random active core
+    core_label <- sample(active_cores, 1)
+    
+    # find all zones belonging to this core
+    core_members <- which(ipart == core_label)
+    
+    # find unallocated neighbors of any core member
+    unalloc_neighbors <- c()
+    for (z in core_members) {
+      neighbors <- nb[[z]]
+      if (!(length(neighbors) == 1 && neighbors == 0)) {  # 0 means no neighbors in spdep
+        unalloc <- neighbors[ipart[neighbors] == 0]
+        unalloc_neighbors <- union(unalloc_neighbors, unalloc)
+      }
+    }
+    
+    if (length(unalloc_neighbors) == 0) {
+      # this core can't grow, deactivate it
+      active_cores <- setdiff(active_cores, core_label)
+    } else {
+      # randomly absorb one neighbor
+      chosen <- ifelse(
+        length(unalloc_neighbors) == 1,
+        unalloc_neighbors,
+        sample(unalloc_neighbors, 1)
+      )
+      ipart[chosen] <- core_label
+    }
+  }
+
+  # --- Check for unallocated zones (islands) ---
+  unallocated <- which(ipart == 0)
+  ifault <- length(unallocated)
+  
+  if (ifault > 0) {
+    warning(paste(ifault, "zones could not be allocated (contiguity islands)"))
+    for (i in seq_along(unallocated)) {
+      ipart[unallocated[i]] <- M + i
+    }
+  }
+  list(
+    ipart    = ipart,
+    ifault   = ifault,
+    n_zones  = length(unique(ipart))
+  )
+}
+```
+
+Besides the zoning algorithm, we also need a function to generate random groupings of the original zones. This is used in the aggregation problem to create zones that's not necessarily contiguous. Please run the code chunk below.
+
+```{r grouping function, warning = FALSE, message=FALSE}
+random_grouping <- function(N, M) {
+  # guarantee each group appears at least once
+  base <- sample(M)
+  rest <- sample(M, N - M, replace = TRUE)
+  sample(c(base, rest))
+}
+```
+
+
+# Part 1 - The Scale Problem 
+
+In part one, we will explore the scale problem by using the zoning algorithm to create 8 different contiguous zones in Iowa. We will then calculate the percentage of votes for the Republican candidate and the percentage of the population that is 60 years or older in each zone, and see how they correlate with each other. Please run the code below. 
+
+```{r scale problem setup, warning = FALSE, message=FALSE, eval=FALSE}
+# neighbor list
+nb <- poly2nb(iowa_data, queen = FALSE)
+
+# number of original zones
+N <- nrow(iowa_data)
+
+# different target numbers of zones
+M_scl <- 8
+```
+
+
+### Instructions
+
+**Please run the two code chunks below multiple times to see how the zones as well as the correlation coefficient change each time you run it. Please run the two chunks at least five times. After that, record the correlation coefficient you get each time in the shared google sheet.**
+
+The code below first runs the zoning algorithm to create 8 different contiguous zones in Iowa. Then, based on the zones generated by the zoning algorithm, we now re-calculate the percentage of votes for the Republican candidate and the percentage of the population that is 60 years or older in each zone, and see how they correlate with each other. 
+
+```{r visualize zones, warning = FALSE, message=FALSE, eval=FALSE}
+
+zoning_results <- zone1_r(nb, N, M_scl)
+
+iowa %>%
+  mutate(zone = factor(zoning_results$ipart)) %>% 
+  ggplot() +
+    geom_sf(aes(fill = zone), color = "white", linewidth = 0.2) +
+    theme +
+    scale_fill_manual(values = palette) +
+    labs(title = paste("Randomly Generated", M_vals, "Zones")) 
+
+```
+
+```{r zone correlation, warning = FALSE, message=FALSE, eval=FALSE}
+zone_summary <- iowa_data %>% 
+  mutate(zone = factor(zoning_results$ipart)) %>% 
+  st_drop_geometry() %>%
+  group_by(zone) %>%
+  summarise(
+      total_pop   = sum(totalpop, na.rm = TRUE),
+      total_vote  = sum(totalvote, na.rm = TRUE),
+      rep_count   = sum(repvote, na.rm = TRUE),
+      pop60_count = sum(pop60, na.rm = TRUE),
+      .groups = "drop") %>%
+    mutate(rep_pct   = 100 * rep_count / total_vote,
+           pop60_pct = 100 * pop60_count / total_pop)
+scale_corr <- cor(zone_summary$rep_pct, zone_summary$pop60_pct, use = "complete.obs")
+cat("Correlation between % Republican vote and % population 60+ in 8 zones:", round(scale_corr, 3))
+```
+
+### Instructions
+
+**Please run the two code chunks below multiple times to see how the groups as well as the correlation coefficient change each time you run it. Please run the two chunks five times. After that, record the correlation coefficient you get each time in the shared google sheet.**
+
+We will repeat the exact the same process with the grouping algorithm. The code below first runs the random grouping function to create 8 different groups in Iowa. Then, based on the groups generated by the random grouping function, we now re-calculate the percentage of votes for the Republican candidate and the percentage of the population that is 60 years or older in each group, and see how they correlate with each other.
+
+```{r visualize group, warning = FALSE, message=FALSE, eval=FALSE}
+grouping_results <- random_grouping(N, M_scl)
+
+iowa %>%
+  mutate(group = factor(grouping_results)) %>% 
+  ggplot() +
+    geom_sf(aes(fill = group), color = "white", linewidth = 0.2) +
+    theme +
+    scale_fill_manual(values = palette) +
+    labs(title = paste("Randomly Generated", M, "Groups (Not Contiguous)"))
+```
+
+```{r group correlation, warning = FALSE, message=FALSE, eval=FALSE}
+group_summary <- iowa_data %>%
+  mutate(group = factor(grouping_results)) %>% 
+  st_drop_geometry() %>%
+  group_by(group) %>%
+  summarise(
+      total_pop   = sum(totalpop, na.rm = TRUE),
+      total_vote  = sum(totalvote, na.rm = TRUE),
+      rep_count   = sum(repvote, na.rm = TRUE),
+      pop60_count = sum(pop60, na.rm = TRUE),
+      .groups = "drop") %>%
+    mutate(rep_pct   = 100 * rep_count / total_vote,
+           pop60_pct = 100 * pop60_count / total_pop)
+group_corr <- cor(group_summary$rep_pct, group_summary$pop60_pct, use =
+ "complete.obs")
+cat("Correlation between % Republican vote and % population 60+ in 8 groups:", round(group_corr, 3))
+```
+
+# Part 2 - The Aggregation Problem 
+
+In part two, we will explore the aggregation problem by using both the zoning and grouping algorithm to create different zones in Iowa, and see how the correlation change. This time, you are encouraged to experiment with different numbers of zones/groups (M) and run the algorithms multiple times as much as you want. 
+
+### Instructions
+
+**Please fill out the number of zones/groups you want to create in the code chunk below. You can choose any number between 6 and 80. After that, run the code chunk as many times as you want and see what is the most "absurd" correlation coefficient you can get! Report to the class.**
+
+
+```{r aggregation problem, warning = FALSE, message=FALSE, eval=FALSE}
+
+M_agg <- ##### you can change this to any number between 6 and 80.
+
+zoning_results_agg <- zone1_r(nb, N, M_agg)
+grouping_results_agg <- random_grouping(N, M_agg)
+
+agg_zones_summary <- iowa_data %>% 
+  mutate(zone = factor(zoning_results_agg$ipart)) %>% 
+  st_drop_geometry() %>%
+  group_by(zone) %>%
+  summarise(
+      total_pop   = sum(totalpop, na.rm = TRUE),
+      total_vote  = sum(totalvote, na.rm = TRUE),
+      rep_count   = sum(repvote, na.rm = TRUE),
+      pop60_count = sum(pop60, na.rm = TRUE),
+      .groups = "drop") %>%
+    mutate(rep_pct   = 100 * rep_count / total_vote,
+           pop60_pct = 100 * pop60_count / total_pop)
+agg_zones_corr <- cor(agg_zones_summary$rep_pct, agg_zones_summary$pop60_pct, use = "complete.obs")
+agg_groups_summary <- iowa_data %>%
+  mutate(group = factor(grouping_results_agg)) %>% 
+  st_drop_geometry() %>%
+  group_by(group) %>%
+  summarise(
+      total_pop   = sum(totalpop, na.rm = TRUE),
+      total_vote  = sum(totalvote, na.rm = TRUE),
+      rep_count   = sum(repvote, na.rm = TRUE),
+      pop60_count = sum(pop60, na.rm = TRUE),
+      .groups = "drop") %>%
+    mutate(rep_pct   = 100 * rep_count / total_vote,
+           pop60_pct = 100 * pop60_count / total_pop)
+agg_groups_corr <- cor(agg_groups_summary$rep_pct, agg_groups_summary$pop60_pct, use = "complete.obs")
+cat("Correlation between % Republican vote and % population 60+ in", M_agg, "zones:", round(agg_zones_corr, 3),
+    "\nCorrelation between % Republican vote and % population 60+ in", M_agg, "groups:", round(agg_groups_corr, 3))
+
+
+```
+
+
+
+
